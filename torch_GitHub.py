@@ -7,7 +7,6 @@ Created on Sun Oct 25 11:17:43 2020
 
 import numpy as np
 from numpy import array
-from numpy import hstack
 import pandas as pd
 import matplotlib.pyplot as plt
 import math
@@ -19,57 +18,41 @@ import torch.nn as nn
 # split a multivariate sequence into samples
 def split_sequences(sequences, n_steps_in, n_steps_out):
 	X, y = list(), list()
-	for i in range(len(sequences)):
+	for i in range(len(sequences)-1):
 		# find the end of this pattern
 		end_ix = i + n_steps_in
 		out_end_ix = end_ix + n_steps_out-1
 		# check if we are beyond the dataset
-		if out_end_ix > len(sequences):
+		if out_end_ix > len(sequences)-1:
 			break
 		# gather input and output parts of the pattern
-		seq_x, seq_y = sequences[i:end_ix, :-1], sequences[end_ix-1:out_end_ix, -1]
+		seq_x, seq_y = sequences[i:end_ix, :-1], sequences[end_ix:out_end_ix+1, -1]
 		X.append(seq_x)
 		y.append(seq_y)
 	return array(X), array(y)
 
+# reading data frame ==================================================
 df = pd.read_csv('goldETF.csv')
 
-# define input sequence
-in_seq1 = array(df['High'].values)
-in_seq2 = array(df['Low'].values)
-in_seq3 = array(df['Open'].values)
-in_seq4 = array(df['Close'].values)
-in_seq5 = array(df['Volume'].values)
-
-out_seq = array(df['Close'].values)
-
-# convert to [rows, columns] structure
-in_seq1 = in_seq1.reshape((len(in_seq1), 1))
-in_seq2 = in_seq2.reshape((len(in_seq2), 1))
-in_seq3 = in_seq3.reshape((len(in_seq3), 1))
-in_seq4 = in_seq4.reshape((len(in_seq4), 1))
-in_seq5 = in_seq5.reshape((len(in_seq5), 1))
-out_seq = out_seq.reshape((len(out_seq), 1))
-
-# horizontally stack columns
-dataset = hstack((in_seq1, in_seq2, in_seq3, in_seq4, in_seq5, out_seq))
-
-# scaling dataset ===============================================
-in_seq = np.concatenate((in_seq1, in_seq2, in_seq3, in_seq4, out_seq), axis=0)
-scaler = MinMaxScaler(feature_range=(0, 1))
-scaler_all = scaler.fit(in_seq)
-
-scaled_in_seq1 = scaler_all.transform(in_seq1)
-scaled_in_seq2 = scaler_all.transform(in_seq2)
-scaled_in_seq3 = scaler_all.transform(in_seq3)
-scaled_in_seq4 = scaler_all.transform(in_seq4)
-scaled_in_seq5 = scaler_all.transform(in_seq5)
-scaled_out_seq = scaler_all.transform(out_seq)
-
-scaled_data = hstack((scaled_in_seq1, scaled_in_seq2, scaled_in_seq3, scaled_in_seq4, scaled_out_seq))
+in_cols = ['Open', 'Low', 'Close']
+out_cols = ['Close', 'Low']
 
 # choose a number of time steps
-n_steps_in, n_steps_out = 60, 1
+n_steps_in, n_steps_out = 45, 1
+
+#==============================================================================
+# Preparing Model for 'Low'=======================================================
+j=1
+dataset_low = np.empty((df[out_cols[j]].values.shape[0],0))
+for i in range(len(in_cols)):
+    dataset_low = np.append(dataset_low, df[in_cols[i]].values.reshape(df[in_cols[i]].values.shape[0],1), axis=1)
+
+dataset_low = np.append(dataset_low, df[out_cols[j]].values.reshape(df[out_cols[j]].values.shape[0],1), axis=1)
+
+# Scaling dataset
+scaler = MinMaxScaler(feature_range=(0, 1))
+scaler_all = scaler.fit(dataset_low)
+scaled_data = scaler_all.transform(dataset_low)
 
 # convert into input/output
 x_train, y_train = split_sequences(scaled_data, n_steps_in, n_steps_out)
@@ -85,15 +68,14 @@ y_test = torch.from_numpy(y_test).type(torch.Tensor)
 
 y_train.size(),x_train.size()
 
-num_epochs = 50
-
 # Build model
 ##################################################
 
-input_dim = 4
+input_dim = 3
 hidden_dim = 32
 num_layers = 2
 output_dim = 1
+num_epochs = 50
 
 # Here we define our model as a class
 class LSTM(nn.Module):
